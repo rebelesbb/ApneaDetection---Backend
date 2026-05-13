@@ -15,7 +15,7 @@ class Spo2Session(Base):
     start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
-    values: Mapped[list] = mapped_column(JSONB, nullable=False)
+    spo2values: Mapped[list] = mapped_column(JSONB, nullable=False)
     timestamps: Mapped[list] = mapped_column(JSONB, nullable=False)
     predictions: Mapped[list] = mapped_column(JSONB, nullable=False)
 

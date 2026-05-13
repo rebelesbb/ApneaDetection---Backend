@@ -36,8 +36,9 @@ def analyze_session(
             user=current_user,
             start_time=payload.start_time,
             end_time=payload.end_time,
-            values=payload.values,
+            spo2values=payload.spo2values,
             timestamps=payload.timestamps,
+            sleep_stages=payload.sleep_stages,
             has_smoked=payload.has_smoked,
             has_drunk_alcohol=payload.has_drunk_alcohol,
         )

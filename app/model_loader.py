@@ -1,60 +1,13 @@
 from fastapi import types
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import Dataset
 import numpy as np
 import joblib
 import sys
 import types
-
-class TemporalBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, dilation: int, droptout: float):
-        super().__init__()
-        padding = ((kernel_size - 1) * dilation) // 2
-
-        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size, padding=padding, dilation=dilation)
-        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size, padding=padding, dilation=dilation)
-
-        self.dropout = nn.Dropout(droptout)
-        self.relu = nn.ReLU()
-
-        self.downsample = None
-        if in_channels != out_channels:
-            self.downsample = nn.Conv1d(in_channels, out_channels, kernel_size=1)
-
-    def forward(self, x):
-        out = self.conv1(x)
-        out = self.relu(out)
-        out = self.dropout(out)
-
-        out = self.conv2(out)
-        out = self.relu(out)
-        out = self.dropout(out)
-
-        res = x if self.downsample is None else self.downsample(x)
-        return out + res
-
-class TCNBinaryClassifier(nn.Module):
-    def __init__(self, in_channels: int = 1, channels: int = 16, dilations=(1,2,4,8,16), kernel_size: int = 3, dropout: float = 0.1):
-        super().__init__()
-
-        blocks = []
-        ch_in = in_channels
-        for dilation in dilations:
-            block = TemporalBlock(ch_in, channels, kernel_size, dilation=dilation, droptout=dropout)
-            blocks.append(block)
-            ch_in = channels
-
-        self.tcn = nn.Sequential(*blocks)
-        self.classifier = nn.Linear(channels, 1)
-
-    def forward(self, x):
-        x = x.transpose(1, 2)
-        feat = self.tcn(x)
-        feat = feat.mean(dim=2)
-        logits = self.classifier(feat)
-        return logits.squeeze(1)
+import json
+from pathlib import Path
+from models_ml.tcn import TCNBinaryClassifier
 
 class Scaler:
     def __init__(self, eps=1e-8):
@@ -85,23 +38,75 @@ class WindowDataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
 
-def load_trained_assets(checkpoint_path="models/spo2_tcn_1.pth", scaler_path="models/scaler_spo2.joblib"):
-    utils_module = types.ModuleType('utils')
-    sys.modules['utils'] = utils_module
-    model_module = types.ModuleType('utils.model_tcn')
-    sys.modules['utils.model_tcn'] = model_module
-    setattr(model_module, 'Scaler', Scaler) 
-    setattr(utils_module, 'model_tcn', model_module)
+MODEL_REGISTRY = {
+    "TCN": TCNBinaryClassifier,
+}
+
+
+def _register_scaler_for_joblib():
+    main_module = sys.modules["__main__"]
+
+    utils_module = types.ModuleType("utils")
+    sys.modules["utils"] = utils_module
+
+    model_module = types.ModuleType("utils.model_tcn")
+    sys.modules["utils.model_tcn"] = model_module
+
+    setattr(main_module, "Scaler", Scaler)
+    setattr(model_module, "Scaler", Scaler)
+    setattr(utils_module, "model_tcn", model_module)
+
+
+def load_config(config_path="models/model_config.json"):
+    config_path = Path(config_path)
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    return config, config_path.parent
+
+
+def load_trained_assets(config_path="models/model_config.json"):
+    _register_scaler_for_joblib()
+
+    config, config_dir = load_config(config_path)
+
+    model_cfg = config["model"]
+
+    model_type = model_cfg["type"]
+    model_params = model_cfg.get("params", {})
+
+    if model_type not in MODEL_REGISTRY:
+        raise ValueError(f"Unsupported model type: {model_type}")
+
+    model_cls = MODEL_REGISTRY[model_type]
+    model = model_cls(**model_params)
+
+    checkpoint_path = Path(model_cfg["checkpoint_path"])
+    scaler_path = Path(model_cfg["scaler_path"])
+
+    if not checkpoint_path.is_absolute():
+        checkpoint_path = config_dir.parent / checkpoint_path
+
+    if not scaler_path.is_absolute():
+        scaler_path = config_dir.parent / scaler_path
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(device)
 
-    model = TCNBinaryClassifier(in_channels=1)
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    checkpoint = torch.load(
+        checkpoint_path,
+        map_location=device,
+        weights_only=False,
+    )
+
+    model.load_state_dict(
+        checkpoint["model_state_dict"],
+        strict=True,
+    )
+
     model = model.to(device)
     model.eval()
- 
+
     scaler = joblib.load(scaler_path)
-    
-    return model, scaler
+
+    return model, scaler, config

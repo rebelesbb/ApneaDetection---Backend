@@ -1,0 +1,24 @@
+{
+  "model": {
+    "type": "TCN",
+    "checkpoint_path": "models_ml/spo2_tcn_apples_120s_center_batch_onset_ft_osa_ucddb.pth",
+    "scaler_path": "models_ml/scaler_apples_batch.joblib",
+    "params": {
+      "in_channels": 1,
+      "channels": 16,
+      "dilations": [1, 2, 4, 8, 16],
+      "kernel_size": 3,
+      "dropout": 0.1
+    }
+  },
+  "postprocessing": {
+    "window_size": 120,
+    "step": 10,
+    "threshold": 0.1,
+    "min_distance_sec": 30,
+    "smoothing_window": 5,
+    "max_interp_gap_sec": 5,
+    "spo2_min": 60.0,
+    "spo2_max": 100.0
+  }
+}

@@ -20,24 +20,25 @@ class Spo2SessionService:
         user: User,
         start_time: datetime,
         end_time: datetime,
-        values: list[float],
+        spo2values: list[float],
         timestamps: list[int],
+        sleep_stages: list[int],
         has_smoked: bool,
         has_drunk_alcohol: bool,
     ):
-        if len(values) != len(timestamps):
+        if len(spo2values) != len(timestamps):
             raise ValueError("Values and timestamps must have the same length.")
 
-        if len(values) < 60:
+        if len(spo2values) < 60:
             raise ValueError("At least 60 samples are required.")
 
-        ahi, predictions = self.apnea_prediction_service.predict(values, timestamps)
+        ahi, predictions = self.apnea_prediction_service.predict(spo2values, timestamps, sleep_stages)
 
         return self.spo2_session_repository.create({
             "user_id": user.id,
             "start_time": start_time,
             "end_time": end_time,
-            "values": values,
+            "spo2values": spo2values,
             "timestamps": timestamps,
             "predictions": predictions,
             "ahi": ahi,
